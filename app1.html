@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1η εφαρμογή - Compton και Φωτοηλεκτρικό Φαινόμενο</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="simulation-view" id="first-app-view">
+    <form class="mode-panel" aria-label="Επιλογή φαινομένου">
+      <label class="radio-option">
+        <input type="radio" name="phenomenon" value="compton" checked>
+        <span>Σκέδαση Compton</span>
+      </label>
+
+      <label class="radio-option">
+        <input type="radio" name="phenomenon" value="photoelectric">
+        <span>Φωτοηλεκτρικό φαινόμενο</span>
+      </label>
+    </form>
+
+    <label class="geometry-toggle">
+      <input type="checkbox" id="geometry-toggle">
+      <span>Γεωμετρικά Χαρακτηριστικά</span>
+    </label>
+
+    <a class="back-button" id="back-home" href="index.html">Αρχική</a>
+
+    <section class="atom-stage" aria-label="Άτομο νέου με πλανητικό μοντέλο">
+      <canvas id="atom-canvas" aria-label="Άτομο Ne με 10 πρωτόνια, 10 νετρόνια και 10 ηλεκτρόνια"></canvas>
+    </section>
+
+    <aside class="compton-panel" aria-label="Ενδείξεις σκέδασης Compton">
+      <h2>Σκέδαση Compton</h2>
+      <dl>
+        <div>
+          <dt>Αρχική ενέργεια φωτονίου</dt>
+          <dd id="initial-energy-value">100.0 keV</dd>
+        </div>
+        <div>
+          <dt>Αρχικό μήκος κύματος</dt>
+          <dd id="initial-wavelength-value">-</dd>
+        </div>
+        <div>
+          <dt>Γωνία φωτονίου</dt>
+          <dd id="scatter-angle-value">-</dd>
+        </div>
+        <div>
+          <dt>Μεταβολή μήκους κύματος</dt>
+          <dd id="wavelength-shift-value">-</dd>
+        </div>
+        <div>
+          <dt>Μήκος κύματος μετά</dt>
+          <dd id="scattered-wavelength-value">-</dd>
+        </div>
+        <div>
+          <dt>Ενέργεια φωτονίου μετά</dt>
+          <dd id="scattered-energy-value">-</dd>
+        </div>
+        <div>
+          <dt>Κινητική ενέργεια ηλεκτρονίου</dt>
+          <dd id="electron-energy-value">-</dd>
+        </div>
+        <div>
+          <dt>Γωνία ηλεκτρονίου</dt>
+          <dd id="electron-angle-value">-</dd>
+        </div>
+      </dl>
+      <p>Η εικόνα του ατόμου είναι απλοποιημένη αναπαράσταση. Στην πραγματικότητα τα ηλεκτρόνια περιγράφονται κβαντομηχανικά.</p>
+    </aside>
+
+    <div class="transport-controls" aria-label="Χειριστήρια animation">
+      <button class="transport-button" type="button" id="step-backward" aria-label="Προηγούμενο">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 5h2v14H6z"></path>
+          <path d="m9 12 9-7v14z"></path>
+        </svg>
+      </button>
+
+      <button class="transport-button primary" type="button" id="play-button" aria-label="Αναπαραγωγή">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 5v14l11-7z"></path>
+        </svg>
+      </button>
+
+      <button class="transport-button" type="button" id="pause-button" aria-label="Παύση">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 5h4v14H7z"></path>
+          <path d="M13 5h4v14h-4z"></path>
+        </svg>
+      </button>
+
+      <button class="transport-button" type="button" id="step-forward" aria-label="Επόμενο">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M16 5h2v14h-2z"></path>
+          <path d="m15 12-9 7V5z"></path>
+        </svg>
+      </button>
+
+      <button class="transport-button" type="button" id="restart-button" aria-label="Επανεκκίνηση">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.08l-1.85.76A6 6 0 1 1 12 6c1.3 0 2.5.41 3.48 1.1L13 9.59H20V2.59z"></path>
+        </svg>
+      </button>
+
+      <button class="radiation-button" type="button" id="radiation-button">Ακτινοβόληση</button>
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

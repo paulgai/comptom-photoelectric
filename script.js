@@ -1,0 +1,759 @@
+const atomCanvas = document.querySelector("#atom-canvas");
+const atomContext = atomCanvas.getContext("2d");
+const playButton = document.querySelector("#play-button");
+const pauseButton = document.querySelector("#pause-button");
+const stepBackwardButton = document.querySelector("#step-backward");
+const stepForwardButton = document.querySelector("#step-forward");
+const restartButton = document.querySelector("#restart-button");
+const radiationButton = document.querySelector("#radiation-button");
+const geometryToggle = document.querySelector("#geometry-toggle");
+const initialWavelengthValue = document.querySelector("#initial-wavelength-value");
+const scatterAngleValue = document.querySelector("#scatter-angle-value");
+const wavelengthShiftValue = document.querySelector("#wavelength-shift-value");
+const scatteredWavelengthValue = document.querySelector("#scattered-wavelength-value");
+const scatteredEnergyValue = document.querySelector("#scattered-energy-value");
+const electronEnergyValue = document.querySelector("#electron-energy-value");
+const electronAngleValue = document.querySelector("#electron-angle-value");
+
+const innerElectronAngles = [20, 200];
+const outerElectronAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+const frameStepSeconds = 5 / 60;
+const photonInitialEnergyKeV = 100;
+const electronRestEnergyKeV = 511;
+const electronBindingEnergyKeV = 0.05;
+const hcKeVNm = 1.239841984;
+const electronComptonWavelengthNm = 0.00242631;
+const initialWavelengthNm = hcKeVNm / photonInitialEnergyKeV;
+const visualInitialWavelengthPx = 10;
+const photonCenterTravelDuration = 1.55;
+const innerElectronBeta = 0.18;
+const outerElectronBeta = 0.1;
+let elapsedTime = 0;
+let lastAnimationTimestamp = null;
+let isPlaying = true;
+let comptonState = null;
+const nucleons = [
+  ["proton", -0.34, -0.38, -0.58],
+  ["neutron", 0.02, -0.42, -0.55],
+  ["proton", 0.35, -0.31, -0.52],
+  ["neutron", -0.48, -0.06, -0.44],
+  ["proton", 0.48, -0.03, -0.42],
+  ["neutron", -0.36, 0.28, -0.4],
+  ["proton", 0.34, 0.3, -0.38],
+  ["neutron", -0.06, 0.46, -0.45],
+  ["proton", -0.18, -0.24, -0.08],
+  ["neutron", 0.2, -0.22, -0.06],
+  ["proton", -0.32, 0.02, -0.04],
+  ["neutron", 0.34, 0.02, -0.02],
+  ["proton", -0.12, 0.26, -0.02],
+  ["neutron", 0.18, 0.24, 0.0],
+  ["proton", 0.0, 0.0, 0.12],
+  ["neutron", -0.18, -0.06, 0.34],
+  ["proton", 0.18, -0.06, 0.38],
+  ["neutron", -0.08, 0.16, 0.5],
+  ["proton", 0.1, 0.12, 0.58],
+  ["neutron", 0.0, -0.02, 0.76],
+];
+
+window.addEventListener("resize", resizeAtomCanvas);
+playButton.addEventListener("click", playAtom);
+pauseButton.addEventListener("click", pauseAtom);
+stepBackwardButton.addEventListener("click", () => stepAtom(-frameStepSeconds));
+stepForwardButton.addEventListener("click", () => stepAtom(frameStepSeconds));
+restartButton.addEventListener("click", restartSimulation);
+radiationButton.addEventListener("click", startComptonIrradiation);
+geometryToggle.addEventListener("change", drawCurrentAtomFrame);
+initialWavelengthValue.textContent = `${initialWavelengthNm.toFixed(4)} nm`;
+
+function resizeAtomCanvas() {
+  const metrics = getCanvasMetrics();
+  const pixelRatio = window.devicePixelRatio || 1;
+
+  if (metrics.width === 0 || metrics.height === 0) {
+    return;
+  }
+
+  atomCanvas.width = Math.round(metrics.width * pixelRatio);
+  atomCanvas.height = Math.round(metrics.height * pixelRatio);
+  atomContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  drawNeonAtom(metrics, elapsedTime);
+}
+
+function animateAtom(timestamp) {
+  if (lastAnimationTimestamp === null) {
+    lastAnimationTimestamp = timestamp;
+  }
+
+  if (isPlaying) {
+    elapsedTime += (timestamp - lastAnimationTimestamp) / 1000;
+  }
+
+  lastAnimationTimestamp = timestamp;
+  const metrics = getCanvasMetrics();
+
+  if (metrics.width > 0 && metrics.height > 0) {
+    drawNeonAtom(metrics, elapsedTime);
+  }
+
+  requestAnimationFrame(animateAtom);
+}
+
+function playAtom() {
+  isPlaying = true;
+  lastAnimationTimestamp = null;
+}
+
+function pauseAtom() {
+  isPlaying = false;
+}
+
+function stepAtom(seconds) {
+  isPlaying = false;
+  elapsedTime = Math.max(0, elapsedTime + seconds);
+  lastAnimationTimestamp = null;
+  drawCurrentAtomFrame();
+}
+
+function startComptonIrradiation() {
+  if (radiationButton.disabled) {
+    return;
+  }
+
+  const metrics = getCanvasMetrics();
+  const geometry = getAtomGeometry(metrics);
+  const targetPlan = getClosestComptonTarget(geometry, metrics, elapsedTime);
+
+  comptonState = {
+    phase: "incoming",
+    startTime: elapsedTime,
+    scatterTime: null,
+    incomingDuration: targetPlan.incomingDuration,
+    incomingY: targetPlan.electronY,
+    incomingEndX: targetPlan.electronX,
+    targetElectronIndex: targetPlan.index,
+    interactionPoint: {
+      x: targetPlan.electronX,
+      y: targetPlan.electronY,
+    },
+    incomingStartX: -metrics.scale * 0.28,
+    results: null,
+  };
+
+  radiationButton.disabled = true;
+  resetComptonPanel();
+  isPlaying = true;
+  lastAnimationTimestamp = null;
+}
+
+function restartSimulation() {
+  elapsedTime = 0;
+  lastAnimationTimestamp = null;
+  isPlaying = true;
+  comptonState = null;
+  radiationButton.disabled = false;
+  resetComptonPanel();
+  drawCurrentAtomFrame();
+}
+
+function resetComptonPanel() {
+  scatterAngleValue.textContent = "-";
+  wavelengthShiftValue.textContent = "-";
+  scatteredWavelengthValue.textContent = "-";
+  scatteredEnergyValue.textContent = "-";
+  electronEnergyValue.textContent = "-";
+  electronAngleValue.textContent = "-";
+}
+
+function drawCurrentAtomFrame() {
+  const metrics = getCanvasMetrics();
+
+  if (metrics.width > 0 && metrics.height > 0) {
+    drawNeonAtom(metrics, elapsedTime);
+  }
+}
+
+function drawNeonAtom(metrics, elapsedTime) {
+  const {
+    center,
+    centerY,
+    innerOrbitRadius,
+    outerOrbitRadius,
+    electronRadius,
+    nucleonRadius,
+    nucleusRadius,
+  } = getAtomGeometry(metrics);
+  const innerRotationAngle = getOrbitalRotationAngle(
+    elapsedTime,
+    innerOrbitRadius,
+    metrics,
+    innerElectronBeta,
+  );
+  const outerRotationAngle = getOrbitalRotationAngle(
+    elapsedTime,
+    outerOrbitRadius,
+    metrics,
+    outerElectronBeta,
+  );
+
+  atomContext.clearRect(0, 0, metrics.width, metrics.height);
+  drawOrbit(center, centerY, innerOrbitRadius);
+  drawOrbit(center, centerY, outerOrbitRadius);
+  drawElectrons(
+    center,
+    centerY,
+    innerOrbitRadius,
+    innerElectronAngles,
+    electronRadius,
+    innerRotationAngle,
+  );
+  drawElectrons(
+    center,
+    centerY,
+    outerOrbitRadius,
+    outerElectronAngles,
+    electronRadius,
+    outerRotationAngle,
+    {
+      skipIndex:
+        comptonState &&
+        elapsedTime >= comptonState.startTime + comptonState.incomingDuration
+          ? comptonState.targetElectronIndex
+          : null,
+    },
+  );
+  drawNucleus(center, centerY, nucleusRadius, nucleonRadius);
+  drawComptonScene(metrics, elapsedTime, outerOrbitRadius, electronRadius);
+}
+
+function getCanvasMetrics() {
+  const bounds = atomCanvas.getBoundingClientRect();
+  const width = Math.round(bounds.width || window.innerWidth || 520);
+  const height = Math.round(bounds.height || window.innerHeight || 520);
+  const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const maxPreviousCanvasSize = rootFontSize * 42;
+  const scale = Math.min(Math.min(width, height) * 0.72, maxPreviousCanvasSize);
+
+  return {
+    width,
+    height,
+    scale,
+  };
+}
+
+function getAtomGeometry(metrics) {
+  return {
+    center: metrics.width / 2,
+    centerY: metrics.height / 2,
+    innerOrbitRadius: metrics.scale * 0.2,
+    outerOrbitRadius: metrics.scale * 0.4,
+    electronRadius: Math.max(3, metrics.scale * 0.01),
+    nucleonRadius: Math.max(7, metrics.scale * 0.029),
+    nucleusRadius: metrics.scale * 0.13,
+  };
+}
+
+function getPhotonVisualSpeed(metrics) {
+  const incomingStartX = -metrics.scale * 0.28;
+  return (metrics.width / 2 - incomingStartX) / photonCenterTravelDuration;
+}
+
+function getOrbitalRotationAngle(time, orbitRadius, metrics, speedFractionOfC) {
+  const angularSpeedRadians = getPhotonVisualSpeed(metrics) * speedFractionOfC / orbitRadius;
+  return radiansToDegrees(-angularSpeedRadians * time);
+}
+
+function getClosestComptonTarget(geometry, metrics, startTime) {
+  const incomingStartX = -metrics.scale * 0.28;
+  const incomingY = geometry.centerY - geometry.outerOrbitRadius;
+  const incomingSpeed = getPhotonVisualSpeed(metrics);
+  const maxIncomingDuration =
+    (geometry.center + geometry.outerOrbitRadius - incomingStartX) / incomingSpeed;
+  const samples = 260;
+  let bestTarget = null;
+
+  for (let sample = 0; sample <= samples; sample += 1) {
+    const timeOffset = (maxIncomingDuration * sample) / samples;
+    const photonX = incomingStartX + incomingSpeed * timeOffset;
+    const photonY = incomingY;
+    const absoluteTime = startTime + timeOffset;
+
+    outerElectronAngles.forEach((_, index) => {
+      const electron = getOuterElectronPosition(geometry, metrics, index, absoluteTime);
+      const distance = Math.hypot(photonX - electron.x, photonY - electron.y);
+
+      if (!bestTarget || distance < bestTarget.distance) {
+        bestTarget = {
+          index,
+          distance,
+          incomingDuration: timeOffset,
+          incomingY,
+          photonX,
+          photonY,
+          electronX: electron.x,
+          electronY: electron.y,
+        };
+      }
+    });
+  }
+
+  return bestTarget;
+}
+
+function getOuterElectronPosition(geometry, metrics, index, time) {
+  const rotationAngle = getOrbitalRotationAngle(
+    time,
+    geometry.outerOrbitRadius,
+    metrics,
+    outerElectronBeta,
+  );
+  const radians = degreesToRadians(outerElectronAngles[index] + rotationAngle);
+
+  return {
+    index,
+    x: geometry.center + Math.cos(radians) * geometry.outerOrbitRadius,
+    y: geometry.centerY + Math.sin(radians) * geometry.outerOrbitRadius,
+  };
+}
+
+function drawComptonScene(metrics, currentTime, outerOrbitRadius, electronRadius) {
+  if (!comptonState) {
+    return;
+  }
+
+  const geometry = getAtomGeometry(metrics);
+  const targetElectron = getOuterElectronPosition(
+    geometry,
+    metrics,
+    comptonState.targetElectronIndex,
+    comptonState.startTime + comptonState.incomingDuration,
+  );
+  const interaction = {
+    x: targetElectron.x,
+    y: targetElectron.y,
+  };
+  comptonState.interactionPoint = interaction;
+
+  const scatterMoment = comptonState.startTime + comptonState.incomingDuration;
+  const incomingProgress = Math.min(
+    1,
+    Math.max(0, (currentTime - comptonState.startTime) / comptonState.incomingDuration),
+  );
+
+  if (currentTime < scatterMoment) {
+    const packetX =
+      comptonState.incomingStartX +
+      (comptonState.incomingEndX - comptonState.incomingStartX) * incomingProgress;
+
+    if (geometryToggle.checked) {
+      drawPhotonIncomingPath(comptonState.incomingStartX, comptonState.incomingY, packetX);
+    }
+
+    drawWavePacket({
+      x: packetX,
+      y: comptonState.incomingY,
+      angle: 0,
+      wavelength: visualInitialWavelengthPx,
+      packetLength: metrics.scale * 0.17,
+      amplitude: metrics.scale * 0.0115,
+      color: "rgba(125, 211, 252, 0.95)",
+      alpha: 1,
+    });
+    return;
+  }
+
+  if (!comptonState.results) {
+    comptonState.phase = "scattered";
+    comptonState.scatterTime = scatterMoment;
+    comptonState.results = calculateComptonScattering();
+    updateComptonPanel(comptonState.results);
+  }
+
+  const scatterElapsed = Math.max(0, currentTime - scatterMoment);
+  const results = comptonState.results;
+  const photonVisualSpeed = getPhotonVisualSpeed(metrics);
+  const photonDistance = scatterElapsed * photonVisualSpeed;
+  const electronDistance = scatterElapsed * photonVisualSpeed * results.electronBeta;
+  const visualScatteredWavelength = visualInitialWavelengthPx * results.wavelengthRatio;
+  const photonPosition = {
+    x: interaction.x + Math.cos(results.photonAngleRad) * photonDistance,
+    y: interaction.y + Math.sin(results.photonAngleRad) * photonDistance,
+  };
+  const electronPosition = {
+    x: interaction.x + Math.cos(results.electronAngleRad) * electronDistance,
+    y: interaction.y + Math.sin(results.electronAngleRad) * electronDistance,
+  };
+
+  if (geometryToggle.checked) {
+    drawComptonGeometry({
+      interaction,
+      photonPosition,
+      electronPosition,
+      photonAngleRad: results.photonAngleRad,
+      electronAngleRad: results.electronAngleRad,
+      thetaDeg: results.thetaDeg,
+      electronAngleDeg: results.electronAngleDeg,
+      incomingStartX: comptonState.incomingStartX,
+      incomingY: comptonState.incomingY,
+      scale: metrics.scale,
+    });
+  }
+
+  const vacancy = getOuterElectronPosition(
+    geometry,
+    metrics,
+    comptonState.targetElectronIndex,
+    currentTime,
+  );
+  drawElectronVacancy(vacancy.x, vacancy.y, electronRadius);
+
+  drawWavePacket({
+    x: photonPosition.x,
+    y: photonPosition.y,
+    angle: results.photonAngleRad,
+    wavelength: visualScatteredWavelength,
+    packetLength: metrics.scale * 0.19,
+    amplitude: metrics.scale * 0.01,
+    color: "rgba(147, 197, 253, 0.78)",
+    alpha: results.energyRatio,
+  });
+
+  drawEjectedElectron({
+    x: electronPosition.x,
+    y: electronPosition.y,
+    radius: electronRadius * 1.18,
+  });
+
+  if (
+    isPlaying &&
+    isPointOutsideCanvas(photonPosition, metrics, metrics.scale * 0.2) &&
+    isPointOutsideCanvas(electronPosition, metrics, electronRadius * 1.18)
+  ) {
+    pauseAtom();
+  }
+}
+
+function drawPhotonIncomingPath(startX, y, interactionX) {
+  atomContext.save();
+  atomContext.strokeStyle = "rgba(125, 211, 252, 0.42)";
+  atomContext.lineWidth = 2;
+  atomContext.setLineDash([8, 8]);
+  atomContext.beginPath();
+  atomContext.moveTo(startX, y);
+  atomContext.lineTo(interactionX, y);
+  atomContext.stroke();
+  atomContext.restore();
+}
+
+function drawComptonGeometry({
+  interaction,
+  photonPosition,
+  electronPosition,
+  photonAngleRad,
+  electronAngleRad,
+  thetaDeg,
+  electronAngleDeg,
+  incomingStartX,
+  incomingY,
+  scale,
+}) {
+  drawPhotonIncomingPath(incomingStartX, incomingY, interaction.x);
+  drawReferenceExtension(interaction, scale);
+  drawGeometryLine(interaction, photonPosition, "rgba(147, 197, 253, 0.52)", [9, 7]);
+  drawGeometryLine(interaction, electronPosition, "rgba(250, 204, 21, 0.62)", [5, 6]);
+  drawAngleArc(interaction, 0, photonAngleRad, scale * 0.095, "φ", "#93c5fd");
+  drawAngleArc(
+    interaction,
+    0,
+    electronAngleRad,
+    scale * 0.14,
+    "ψ",
+    "#facc15",
+  );
+}
+
+function drawReferenceExtension(interaction, scale) {
+  atomContext.save();
+  atomContext.strokeStyle = "rgba(191, 219, 254, 0.22)";
+  atomContext.lineWidth = 2;
+  atomContext.setLineDash([8, 10]);
+  atomContext.beginPath();
+  atomContext.moveTo(interaction.x, interaction.y);
+  atomContext.lineTo(interaction.x + scale * 0.5, interaction.y);
+  atomContext.stroke();
+  atomContext.restore();
+}
+
+function drawGeometryLine(start, end, color, dashPattern) {
+  atomContext.save();
+  atomContext.strokeStyle = color;
+  atomContext.lineWidth = 2;
+  atomContext.setLineDash(dashPattern);
+  atomContext.beginPath();
+  atomContext.moveTo(start.x, start.y);
+  atomContext.lineTo(end.x, end.y);
+  atomContext.stroke();
+  atomContext.restore();
+}
+
+function drawAngleArc(origin, startAngle, endAngle, radius, label, color) {
+  const counterclockwise = endAngle < startAngle;
+  const labelAngle = startAngle + normalizeRadians(endAngle - startAngle) / 2;
+  const labelX = origin.x + Math.cos(labelAngle) * (radius + 18);
+  const labelY = origin.y + Math.sin(labelAngle) * (radius + 18);
+
+  atomContext.save();
+  atomContext.strokeStyle = color;
+  atomContext.fillStyle = color;
+  atomContext.lineWidth = 2;
+  atomContext.beginPath();
+  atomContext.arc(origin.x, origin.y, radius, startAngle, endAngle, counterclockwise);
+  atomContext.stroke();
+  atomContext.font = "700 13px Inter, sans-serif";
+  atomContext.textAlign = "center";
+  atomContext.textBaseline = "middle";
+  atomContext.fillText(label, labelX, labelY);
+  atomContext.restore();
+}
+
+function normalizeRadians(radians) {
+  if (radians > Math.PI) {
+    return radians - Math.PI * 2;
+  }
+
+  if (radians < -Math.PI) {
+    return radians + Math.PI * 2;
+  }
+
+  return radians;
+}
+
+function isPointOutsideCanvas(point, metrics, margin) {
+  return (
+    point.x < -margin ||
+    point.x > metrics.width + margin ||
+    point.y < -margin ||
+    point.y > metrics.height + margin
+  );
+}
+
+function drawWavePacket({ x, y, angle, wavelength, packetLength, amplitude, color, alpha }) {
+  const samples = Math.max(220, Math.ceil(packetLength * 1.6));
+  const halfLength = packetLength / 2;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+
+  atomContext.save();
+  atomContext.lineWidth = 3;
+  atomContext.strokeStyle = color;
+  atomContext.globalAlpha = Math.max(0.36, alpha);
+  atomContext.shadowBlur = 16;
+  atomContext.shadowColor = color;
+  atomContext.beginPath();
+
+  for (let i = 0; i <= samples; i += 1) {
+    const t = -halfLength + (packetLength * i) / samples;
+    const envelope = Math.sin((Math.PI * i) / samples);
+    const displacement = Math.sin((2 * Math.PI * t) / wavelength) * amplitude * envelope;
+    const pointX = x + cos * t - sin * displacement;
+    const pointY = y + sin * t + cos * displacement;
+
+    if (i === 0) {
+      atomContext.moveTo(pointX, pointY);
+    } else {
+      atomContext.lineTo(pointX, pointY);
+    }
+  }
+
+  atomContext.stroke();
+  atomContext.restore();
+}
+
+function drawElectronVacancy(x, y, radius) {
+  atomContext.save();
+  atomContext.globalAlpha = 0.72;
+  atomContext.strokeStyle = "rgba(250, 204, 21, 0.82)";
+  atomContext.lineWidth = 2;
+  atomContext.setLineDash([4, 5]);
+  atomContext.beginPath();
+  atomContext.arc(x, y, radius * 1.55, 0, Math.PI * 2);
+  atomContext.stroke();
+  atomContext.restore();
+}
+
+function drawEjectedElectron({ x, y, radius }) {
+  atomContext.save();
+  atomContext.shadowBlur = 18;
+  atomContext.shadowColor = "#facc15";
+  atomContext.fillStyle = "#fde047";
+  atomContext.beginPath();
+  atomContext.arc(x, y, radius, 0, Math.PI * 2);
+  atomContext.fill();
+  atomContext.restore();
+}
+
+function calculateComptonScattering() {
+  const theta = sampleKleinNishinaAngle(photonInitialEnergyKeV);
+  const scatterSign = Math.random() < 0.5 ? -1 : 1;
+  const photonAngleRad = theta * scatterSign;
+  const energyRatioDenominator =
+    1 + (photonInitialEnergyKeV / electronRestEnergyKeV) * (1 - Math.cos(theta));
+  const scatteredEnergyKeV = photonInitialEnergyKeV / energyRatioDenominator;
+  const wavelengthShiftNm = electronComptonWavelengthNm * (1 - Math.cos(theta));
+  const scatteredWavelengthNm = initialWavelengthNm + wavelengthShiftNm;
+  const electronKineticEnergyKeV = Math.max(
+    0,
+    photonInitialEnergyKeV - scatteredEnergyKeV - electronBindingEnergyKeV,
+  );
+  const electronAngleMagnitude = Math.atan2(
+    scatteredEnergyKeV * Math.sin(theta),
+    photonInitialEnergyKeV - scatteredEnergyKeV * Math.cos(theta),
+  );
+  const electronAngleRad = -scatterSign * electronAngleMagnitude;
+  const gamma = 1 + electronKineticEnergyKeV / electronRestEnergyKeV;
+  const beta = Math.sqrt(Math.max(0, 1 - 1 / (gamma * gamma)));
+
+  return {
+    thetaRad: theta,
+    photonAngleRad,
+    electronAngleRad,
+    thetaDeg: radiansToDegrees(theta),
+    electronAngleDeg: radiansToDegrees(electronAngleMagnitude),
+    scatteredEnergyKeV,
+    wavelengthShiftNm,
+    scatteredWavelengthNm,
+    electronKineticEnergyKeV,
+    wavelengthRatio: scatteredWavelengthNm / initialWavelengthNm,
+    energyRatio: scatteredEnergyKeV / photonInitialEnergyKeV,
+    electronBeta: beta,
+  };
+}
+
+function sampleKleinNishinaAngle(energyKeV) {
+  const maxProbability = getKleinNishinaMaxProbability(energyKeV);
+
+  for (let attempts = 0; attempts < 10000; attempts += 1) {
+    const theta = Math.random() * Math.PI;
+    const probability = kleinNishinaProbability(theta, energyKeV);
+
+    if (Math.random() * maxProbability <= probability) {
+      return theta;
+    }
+  }
+
+  return Math.PI / 2;
+}
+
+function getKleinNishinaMaxProbability(energyKeV) {
+  let maxProbability = 0;
+
+  for (let i = 1; i < 180; i += 1) {
+    maxProbability = Math.max(
+      maxProbability,
+      kleinNishinaProbability(degreesToRadians(i), energyKeV),
+    );
+  }
+
+  return maxProbability;
+}
+
+function kleinNishinaProbability(theta, energyKeV) {
+  const cosTheta = Math.cos(theta);
+  const sinTheta = Math.sin(theta);
+  const ratio = 1 / (1 + (energyKeV / electronRestEnergyKeV) * (1 - cosTheta));
+
+  return (
+    ratio *
+    ratio *
+    (1 / ratio + ratio - sinTheta * sinTheta) *
+    Math.max(0, sinTheta)
+  );
+}
+
+function updateComptonPanel(results) {
+  scatterAngleValue.textContent = `${results.thetaDeg.toFixed(0)}°`;
+  wavelengthShiftValue.textContent = `${results.wavelengthShiftNm.toFixed(4)} nm`;
+  scatteredWavelengthValue.textContent = `${results.scatteredWavelengthNm.toFixed(4)} nm`;
+  scatteredEnergyValue.textContent = `${results.scatteredEnergyKeV.toFixed(1)} keV`;
+  electronEnergyValue.textContent = `${results.electronKineticEnergyKeV.toFixed(2)} keV`;
+  electronAngleValue.textContent = `${results.electronAngleDeg.toFixed(0)}°`;
+}
+
+function drawOrbit(x, y, radius) {
+  atomContext.beginPath();
+  atomContext.arc(x, y, radius, 0, Math.PI * 2);
+  atomContext.strokeStyle = "rgba(191, 219, 254, 0.58)";
+  atomContext.lineWidth = 2;
+  atomContext.stroke();
+}
+
+function drawElectrons(x, y, radius, angles, electronRadius, rotationAngle, options = {}) {
+  atomContext.fillStyle = "#facc15";
+
+  angles.forEach((angle, index) => {
+    if (options.skipIndex === index) {
+      return;
+    }
+
+    const radians = degreesToRadians(angle + rotationAngle);
+    atomContext.beginPath();
+    atomContext.arc(
+      x + Math.cos(radians) * radius,
+      y + Math.sin(radians) * radius,
+      electronRadius,
+      0,
+      Math.PI * 2,
+    );
+    atomContext.fill();
+  });
+}
+
+function drawNucleus(x, y, nucleusRadius, nucleonRadius) {
+  [...nucleons]
+    .sort((a, b) => a[3] - b[3])
+    .forEach(([type, offsetX, offsetY, offsetZ]) => {
+      const depth = (offsetZ + 0.58) / 1.4;
+      const sphereProjectionScale = 1 - Math.max(offsetZ, 0) * 0.28;
+      const radiusScale = 0.86 + depth * 0.24;
+      const nucleonX = x + offsetX * nucleusRadius * sphereProjectionScale;
+      const nucleonY = y + offsetY * nucleusRadius * sphereProjectionScale;
+
+      drawNucleon(nucleonX, nucleonY, nucleonRadius * radiusScale, type);
+    });
+}
+
+function drawNucleon(x, y, radius, type) {
+  const gradient = atomContext.createRadialGradient(
+    x - radius * 0.32,
+    y - radius * 0.36,
+    radius * 0.12,
+    x,
+    y,
+    radius,
+  );
+
+  if (type === "proton") {
+    gradient.addColorStop(0, "#fecaca");
+    gradient.addColorStop(0.35, "#ef4444");
+    gradient.addColorStop(1, "#991b1b");
+  } else {
+    gradient.addColorStop(0, "#dbeafe");
+    gradient.addColorStop(0.38, "#3b82f6");
+    gradient.addColorStop(1, "#1e3a8a");
+  }
+
+  atomContext.beginPath();
+  atomContext.arc(x, y, radius, 0, Math.PI * 2);
+  atomContext.fillStyle = gradient;
+  atomContext.fill();
+}
+
+function degreesToRadians(degrees) {
+  return (degrees * Math.PI) / 180;
+}
+
+function radiansToDegrees(radians) {
+  return (radians * 180) / Math.PI;
+}
+
+resizeAtomCanvas();
+requestAnimationFrame(animateAtom);
