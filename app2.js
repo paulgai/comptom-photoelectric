@@ -18,11 +18,13 @@ const app2RadiationButton = document.querySelector("#app2-radiation-button");
 const secondAppView = document.querySelector("#second-app-view");
 const probabilityOutputs = {
   totalPass: document.querySelector("#total-pass-probability"),
+  totalInteraction: document.querySelector("#total-interaction-probability"),
   comptonShare: document.querySelector("#compton-share-probability"),
   photoelectricShare: document.querySelector("#photoelectric-share-probability"),
 };
 const probabilityMeters = {
   totalPass: document.querySelector("#total-pass-meter"),
+  totalInteraction: document.querySelector("#total-interaction-meter"),
   comptonShare: document.querySelector("#compton-share-meter"),
   photoelectricShare: document.querySelector("#photoelectric-share-meter"),
 };
@@ -433,17 +435,19 @@ function updateProbabilityPanel() {
   const layerPassProbability = 1 - probabilities.interactionProbability;
   const totalPassProbability = layerPassProbability ** fixedLayerCount;
   const totalInteractionProbability = 1 - totalPassProbability;
-  const totalComptonProbability = totalInteractionProbability * probabilities.comptonProbability;
-  const totalPhotoelectricProbability = totalInteractionProbability * probabilities.photoelectricProbability;
-  const displayValues = getDisplayProbabilityValues([
+  const passInteractionDisplayValues = getDisplayProbabilityValues([
     totalPassProbability,
-    totalComptonProbability,
-    totalPhotoelectricProbability,
+    totalInteractionProbability,
+  ]);
+  const interactionTypeDisplayValues = getDisplayProbabilityValues([
+    probabilities.comptonProbability,
+    probabilities.photoelectricProbability,
   ]);
 
-  setProbabilityValue("totalPass", totalPassProbability, displayValues[0]);
-  setProbabilityValue("comptonShare", totalComptonProbability, displayValues[1]);
-  setProbabilityValue("photoelectricShare", totalPhotoelectricProbability, displayValues[2]);
+  setProbabilityValue("totalPass", totalPassProbability, passInteractionDisplayValues[0]);
+  setProbabilityValue("totalInteraction", totalInteractionProbability, passInteractionDisplayValues[1]);
+  setProbabilityValue("comptonShare", probabilities.comptonProbability, interactionTypeDisplayValues[0]);
+  setProbabilityValue("photoelectricShare", probabilities.photoelectricProbability, interactionTypeDisplayValues[1]);
 }
 
 function getGridCellsByLayer() {
