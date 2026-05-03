@@ -7,19 +7,173 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="app-shell secondary-page">
-    <a class="back-button static-back" href="index.html">Αρχική</a>
+  <main class="simulation-view" id="second-app-view">
+    <form class="app2-slider-panel" aria-label="Παράμετροι προσομοίωσης">
+      <label class="slider-control">
+        <span class="slider-label">
+          <span>Ενέργεια φωτονίων</span>
+          <output for="photon-energy-slider" id="photon-energy-value">100 keV</output>
+        </span>
+        <input
+          type="range"
+          id="photon-energy-slider"
+          min="10"
+          max="200"
+          step="1"
+          value="100"
+        >
+      </label>
 
-    <section class="intro" aria-labelledby="second-page-title">
-      <p class="eyebrow">Εκπαιδευτική εφαρμογή φυσικής</p>
-      <h1 id="second-page-title">2η εφαρμογή</h1>
+      <label class="slider-control">
+        <span class="slider-label">
+          <span>Ατομικός αριθμός Z</span>
+          <output for="atomic-number-slider" id="atomic-number-value">26</output>
+        </span>
+        <input
+          type="range"
+          id="atomic-number-slider"
+          min="6"
+          max="30"
+          step="1"
+          value="26"
+        >
+      </label>
+
+      <label class="slider-control">
+        <span class="slider-label">
+          <span>Αριθμός φωτονίων N</span>
+          <output for="photon-count-slider" id="photon-count-value">100</output>
+        </span>
+        <input
+          type="range"
+          id="photon-count-slider"
+          min="100"
+          max="1000"
+          step="100"
+          value="100"
+        >
+      </label>
+
+      <div class="trail-controls" aria-label="Τροχιές φωτονίων">
+        <span class="trail-controls-title">Τροχιές:</span>
+
+        <label class="checkbox-control">
+          <input type="checkbox" id="pass-photon-trails-toggle">
+          <span>Διερχόμενων</span>
+        </label>
+
+        <label class="checkbox-control">
+          <input type="checkbox" id="scattered-photon-trails-toggle">
+          <span>Σκεδαζόμενων</span>
+        </label>
+
+        <label class="checkbox-control">
+          <input type="checkbox" id="secondary-photon-trails-toggle">
+          <span>Δευτερογενών</span>
+        </label>
+      </div>
+
+      <div class="atom-info-controls" aria-label="Πληροφορίες ανά άτομο">
+        <span class="trail-controls-title">Πληροφορίες ανά άτομο:</span>
+
+        <label class="checkbox-control">
+          <input type="checkbox" id="atom-counters-toggle">
+          <span>Καταμέτρηση Αλληλεπιδράσεων</span>
+        </label>
+      </div>
+
+      <label class="slider-control is-hidden">
+        <span class="slider-label">
+          <span>Πάχος</span>
+          <output for="distance-slider" id="distance-value">5</output>
+        </span>
+        <input
+          type="range"
+          id="distance-slider"
+          min="1"
+          max="5"
+          step="1"
+          value="5"
+        >
+      </label>
+
+      <section class="probability-panel" aria-label="Πιθανότητες αλληλεπίδρασης">
+        <h2>Ποσοστά</h2>
+
+        <div class="probability-group">
+          <div class="probability-row">
+            <span>Χωρίς αλληλεπίδραση</span>
+            <output id="total-pass-probability">0%</output>
+          </div>
+          <div class="probability-meter" aria-hidden="true">
+            <span id="total-pass-meter"></span>
+          </div>
+        </div>
+
+        <div class="probability-group">
+          <div class="probability-row">
+            <span>Compton</span>
+            <output id="compton-share-probability">0%</output>
+          </div>
+          <div class="probability-meter" aria-hidden="true">
+            <span id="compton-share-meter"></span>
+          </div>
+
+          <div class="probability-row">
+            <span>Φωτοηλεκτρικό</span>
+            <output id="photoelectric-share-probability">0%</output>
+          </div>
+          <div class="probability-meter" aria-hidden="true">
+            <span id="photoelectric-share-meter"></span>
+          </div>
+        </div>
+      </section>
+    </form>
+
+    <a class="back-button" href="index.html">Αρχική</a>
+
+    <section class="app2-stage" aria-label="Περιοχή δεύτερης προσομοίωσης">
+      <div class="crystal-grid" id="crystal-grid" aria-label="Πλέγμα κυψελίδων"></div>
     </section>
 
-    <section class="placeholder-panel" aria-label="Περιεχόμενο δεύτερης εφαρμογής">
-      <span class="image-frame">
-        <img src="images/2.png" alt="Οπτική αναπαράσταση δεύτερης ενότητας">
-      </span>
-    </section>
+    <div class="transport-controls" aria-label="Χειριστήρια animation">
+      <button class="transport-button" type="button" id="app2-step-backward" aria-label="Προηγούμενο">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 5h2v14H6z"></path>
+          <path d="m9 12 9-7v14z"></path>
+        </svg>
+      </button>
+
+      <button class="transport-button primary" type="button" id="app2-play-button" aria-label="Αναπαραγωγή">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 5v14l11-7z"></path>
+        </svg>
+      </button>
+
+      <button class="transport-button" type="button" id="app2-pause-button" aria-label="Παύση">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 5h4v14H7z"></path>
+          <path d="M13 5h4v14h-4z"></path>
+        </svg>
+      </button>
+
+      <button class="transport-button" type="button" id="app2-step-forward" aria-label="Επόμενο">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M16 5h2v14h-2z"></path>
+          <path d="m15 12-9 7V5z"></path>
+        </svg>
+      </button>
+
+      <button class="transport-button" type="button" id="app2-restart-button" aria-label="Επανεκκίνηση">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.08l-1.85.76A6 6 0 1 1 12 6c1.3 0 2.5.41 3.48 1.1L13 9.59H20V2.59z"></path>
+        </svg>
+      </button>
+
+      <button class="radiation-button" type="button" id="app2-radiation-button">Ακτινοβόληση</button>
+    </div>
   </main>
+
+  <script src="app2.js"></script>
 </body>
 </html>

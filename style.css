@@ -331,6 +331,15 @@ h1 {
   box-shadow: none;
 }
 
+.transport-button.primary.is-active,
+.transport-button.primary.is-active:disabled {
+  opacity: 1;
+  background: #1d4ed8;
+  box-shadow:
+    inset 0 0 0 2px rgba(238, 243, 255, 0.22),
+    0 16px 40px rgba(37, 99, 235, 0.34);
+}
+
 .transport-button.primary:hover,
 .transport-button.primary:focus-visible {
   background: #3b82f6;
@@ -353,13 +362,282 @@ h1 {
   fill: currentColor;
 }
 
-.secondary-page {
-  position: relative;
+.app2-slider-panel {
+  position: absolute;
+  top: 1.5rem;
+  left: 1.5rem;
+  z-index: 2;
+  display: grid;
+  gap: 1rem;
+  width: min(22rem, calc(100% - 3rem));
+  padding: 1rem;
+  border: 1px solid rgba(185, 202, 233, 0.16);
+  border-radius: 8px;
+  background: rgba(14, 20, 33, 0.86);
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.26);
 }
 
-.placeholder-panel {
-  width: min(760px, 100%);
-  margin: 0 auto;
+.slider-control {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.slider-control.is-hidden {
+  display: none;
+}
+
+.checkbox-control {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #eef3ff;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.checkbox-control input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #7dd3c7;
+}
+
+.trail-controls,
+.atom-info-controls {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.trail-controls-title {
+  color: #eef3ff;
+  font-size: 0.9rem;
+  font-weight: 850;
+}
+
+.slider-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #eef3ff;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.slider-label output {
+  color: #7dd3c7;
+  font-size: 0.9rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.slider-control input[type="range"] {
+  width: 100%;
+  accent-color: #7dd3c7;
+  cursor: pointer;
+}
+
+.probability-panel {
+  display: grid;
+  gap: 0.9rem;
+  padding-top: 0.2rem;
+  color: #eef3ff;
+}
+
+.probability-panel h2,
+.probability-panel h3,
+.probability-panel p {
+  margin: 0;
+}
+
+.probability-panel h2 {
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.probability-panel h3 {
+  color: rgba(238, 243, 255, 0.76);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.probability-group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.probability-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.probability-row output,
+.probability-row output {
+  color: #7dd3c7;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.probability-meter {
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(238, 243, 255, 0.12);
+}
+
+.probability-meter span {
+  display: block;
+  width: var(--probability-value, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7dd3c7, #60a5fa);
+  transition: width 160ms ease;
+}
+
+.app2-stage {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.crystal-grid {
+  --grid-columns: 4;
+  --cell-height: calc((100vh - 40px) / 5);
+  position: relative;
+  z-index: 0;
+  width: 100vw;
+  height: calc(100vh - 40px);
+  pointer-events: none;
+}
+
+.crystal-column {
+  position: absolute;
+  top: 0;
+  left: calc(50% + var(--column-offset) * var(--cell-height) - var(--cell-height) / 2);
+  display: grid;
+  grid-auto-rows: var(--cell-height);
+  width: var(--cell-height);
+  height: calc(100vh - 40px);
+}
+
+.crystal-column.is-staggered {
+  transform: translateY(calc(var(--cell-height) / -2));
+}
+
+.crystal-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--cell-height);
+  height: var(--cell-height);
+}
+
+.atom-glyph {
+  display: block;
+  width: min(92%, 8.4rem);
+  height: min(92%, 8.4rem);
+  overflow: visible;
+}
+
+.atom-orbit {
+  fill: none;
+  stroke: rgba(147, 197, 253, 0.42);
+  stroke-width: 1.25;
+}
+
+.atom-electron {
+  fill: rgba(250, 204, 21, 0.96);
+}
+
+.atom-electron-shell {
+  transform: rotate(var(--atom-spin-angle, 0deg));
+  transform-box: view-box;
+  transform-origin: center;
+}
+
+.atom-nucleus {
+  fill: #071d3e;
+  stroke: rgba(147, 197, 253, 0.58);
+  stroke-width: 1;
+}
+
+.cell-counters {
+  position: absolute;
+  top: 50%;
+  right: calc(50% + min(46%, 4.2rem) + 0.35rem);
+  z-index: 1;
+  color: rgba(238, 243, 255, 0.9);
+  font-size: clamp(0.58rem, 1vw, 0.78rem);
+  font-weight: 850;
+  line-height: 1.18;
+  width: max-content;
+  white-space: pre;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.78);
+  transform: translateY(-50%);
+}
+
+.beam-photon {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: 1.45rem;
+  height: 0.21rem;
+  margin-left: -0.725rem;
+  margin-top: -0.105rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(0, 174, 255, 0.24), rgba(56, 189, 248, 1), rgba(0, 174, 255, 0.24));
+  pointer-events: none;
+}
+
+.beam-photon.is-compton {
+  background: linear-gradient(90deg, rgba(0, 174, 255, 0.24), rgba(56, 189, 248, 1), rgba(0, 174, 255, 0.24));
+}
+
+.beam-photon.is-photoelectric {
+  background: linear-gradient(90deg, rgba(0, 174, 255, 0.24), rgba(56, 189, 248, 1), rgba(0, 174, 255, 0.24));
+}
+
+.beam-photon.is-deexcitation {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.22), rgba(248, 113, 113, 1), rgba(239, 68, 68, 0.22));
+}
+
+.photon-trail {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  height: 0;
+  pointer-events: none;
+  transform-origin: left center;
+}
+
+.photon-trail.is-blue {
+  border-top: 1px solid rgba(125, 211, 252, 0.26);
+}
+
+.photon-trail.is-red {
+  border-top: 1px solid rgba(248, 113, 113, 0.28);
+}
+
+.recoil-electron {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  width: 0.23rem;
+  height: 0.23rem;
+  margin-left: -0.115rem;
+  margin-top: -0.115rem;
+  border-radius: 50%;
+  background: #facc15;
+  pointer-events: none;
 }
 
 @media (max-width: 760px) {
@@ -386,6 +664,12 @@ h1 {
 
   .geometry-toggle {
     top: 8.15rem;
+    left: 1rem;
+    width: calc(100% - 2rem);
+  }
+
+  .app2-slider-panel {
+    top: 1rem;
     left: 1rem;
     width: calc(100% - 2rem);
   }

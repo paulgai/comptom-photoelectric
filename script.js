@@ -7,6 +7,9 @@ const stepForwardButton = document.querySelector("#step-forward");
 const restartButton = document.querySelector("#restart-button");
 const radiationButton = document.querySelector("#radiation-button");
 const geometryToggle = document.querySelector("#geometry-toggle");
+const phenomenonRadios = document.querySelectorAll('input[name="phenomenon"]');
+const panelTitle = document.querySelector(".compton-panel h2");
+const panelNote = document.querySelector(".compton-panel p");
 const initialWavelengthValue = document.querySelector("#initial-wavelength-value");
 const scatterAngleValue = document.querySelector("#scatter-angle-value");
 const wavelengthShiftValue = document.querySelector("#wavelength-shift-value");
@@ -14,6 +17,15 @@ const scatteredWavelengthValue = document.querySelector("#scattered-wavelength-v
 const scatteredEnergyValue = document.querySelector("#scattered-energy-value");
 const electronEnergyValue = document.querySelector("#electron-energy-value");
 const electronAngleValue = document.querySelector("#electron-angle-value");
+const panelLabels = {
+  initialWavelength: initialWavelengthValue.closest("div").querySelector("dt"),
+  scatterAngle: scatterAngleValue.closest("div").querySelector("dt"),
+  wavelengthShift: wavelengthShiftValue.closest("div").querySelector("dt"),
+  scatteredWavelength: scatteredWavelengthValue.closest("div").querySelector("dt"),
+  scatteredEnergy: scatteredEnergyValue.closest("div").querySelector("dt"),
+  electronEnergy: electronEnergyValue.closest("div").querySelector("dt"),
+  electronAngle: electronAngleValue.closest("div").querySelector("dt"),
+};
 
 const innerElectronAngles = [20, 200];
 const outerElectronAngles = [0, 45, 90, 135, 180, 225, 270, 315];
@@ -21,17 +33,23 @@ const frameStepSeconds = 5 / 60;
 const photonInitialEnergyKeV = 100;
 const electronRestEnergyKeV = 511;
 const electronBindingEnergyKeV = 0.05;
+const kShellBindingEnergyKeV = 0.87;
+const lShellBindingEnergyKeV = 0.05;
 const hcKeVNm = 1.239841984;
 const electronComptonWavelengthNm = 0.00242631;
 const initialWavelengthNm = hcKeVNm / photonInitialEnergyKeV;
 const visualInitialWavelengthPx = 10;
+const visualEmittedWavelengthPx = 38;
 const photonCenterTravelDuration = 1.55;
+const photoelectricVacancyDelay = 1;
+const photoelectricTransitionDuration = 0.55;
 const innerElectronBeta = 0.18;
 const outerElectronBeta = 0.1;
 let elapsedTime = 0;
 let lastAnimationTimestamp = null;
 let isPlaying = true;
 let comptonState = null;
+let photoelectricState = null;
 const nucleons = [
   ["proton", -0.34, -0.38, -0.58],
   ["neutron", 0.02, -0.42, -0.55],
@@ -61,8 +79,9 @@ pauseButton.addEventListener("click", pauseAtom);
 stepBackwardButton.addEventListener("click", () => stepAtom(-frameStepSeconds));
 stepForwardButton.addEventListener("click", () => stepAtom(frameStepSeconds));
 restartButton.addEventListener("click", restartSimulation);
-radiationButton.addEventListener("click", startComptonIrradiation);
+radiationButton.addEventListener("click", startIrradiation);
 geometryToggle.addEventListener("change", drawCurrentAtomFrame);
+phenomenonRadios.forEach((radio) => radio.addEventListener("change", handlePhenomenonChange));
 initialWavelengthValue.textContent = `${initialWavelengthNm.toFixed(4)} nm`;
 
 function resizeAtomCanvas() {
@@ -114,6 +133,19 @@ function stepAtom(seconds) {
   drawCurrentAtomFrame();
 }
 
+function getSelectedPhenomenon() {
+  return document.querySelector('input[name="phenomenon"]:checked')?.value || "compton";
+}
+
+function startIrradiation() {
+  if (getSelectedPhenomenon() === "photoelectric") {
+    startPhotoelectricIrradiation();
+    return;
+  }
+
+  startComptonIrradiation();
+}
+
 function startComptonIrradiation() {
   if (radiationButton.disabled) {
     return;
@@ -140,7 +172,44 @@ function startComptonIrradiation() {
   };
 
   radiationButton.disabled = true;
+  photoelectricState = null;
   resetComptonPanel();
+  isPlaying = true;
+  lastAnimationTimestamp = null;
+}
+
+function startPhotoelectricIrradiation() {
+  if (radiationButton.disabled) {
+    return;
+  }
+
+  const metrics = getCanvasMetrics();
+  const geometry = getAtomGeometry(metrics);
+  const targetPlan = getPhotoelectricTarget(geometry, metrics, elapsedTime);
+
+  photoelectricState = {
+    phase: "incoming",
+    startTime: elapsedTime,
+    absorptionTime: null,
+    transitionStartTime: null,
+    transitionEndTime: null,
+    incomingDuration: targetPlan.incomingDuration,
+    incomingY: targetPlan.electronY,
+    incomingEndX: targetPlan.electronX,
+    targetElectronIndex: targetPlan.index,
+    donorElectronIndex: null,
+    donorStart: null,
+    interactionPoint: {
+      x: targetPlan.electronX,
+      y: targetPlan.electronY,
+    },
+    incomingStartX: -metrics.scale * 0.28,
+    results: null,
+  };
+
+  radiationButton.disabled = true;
+  comptonState = null;
+  updatePhotoelectricPanel(calculatePhotoelectricResults());
   isPlaying = true;
   lastAnimationTimestamp = null;
 }
@@ -150,12 +219,40 @@ function restartSimulation() {
   lastAnimationTimestamp = null;
   isPlaying = true;
   comptonState = null;
+  photoelectricState = null;
   radiationButton.disabled = false;
-  resetComptonPanel();
+  resetPanelForSelectedPhenomenon();
   drawCurrentAtomFrame();
 }
 
+function handlePhenomenonChange() {
+  comptonState = null;
+  photoelectricState = null;
+  radiationButton.disabled = false;
+  resetPanelForSelectedPhenomenon();
+  drawCurrentAtomFrame();
+}
+
+function resetPanelForSelectedPhenomenon() {
+  if (getSelectedPhenomenon() === "photoelectric") {
+    updatePhotoelectricPanel(calculatePhotoelectricResults());
+  } else {
+    resetComptonPanel();
+  }
+}
+
 function resetComptonPanel() {
+  panelTitle.textContent = "Σκέδαση Compton";
+  panelLabels.initialWavelength.textContent = "Αρχικό μήκος κύματος";
+  panelLabels.scatterAngle.textContent = "Γωνία φωτονίου";
+  panelLabels.wavelengthShift.textContent = "Μεταβολή μήκους κύματος";
+  panelLabels.scatteredWavelength.textContent = "Μήκος κύματος μετά";
+  panelLabels.scatteredEnergy.textContent = "Ενέργεια φωτονίου μετά";
+  panelLabels.electronEnergy.textContent = "Κινητική ενέργεια ηλεκτρονίου";
+  panelLabels.electronAngle.textContent = "Γωνία ηλεκτρονίου";
+  panelNote.textContent =
+    "Η εικόνα του ατόμου είναι απλοποιημένη αναπαράσταση. Στην πραγματικότητα τα ηλεκτρόνια περιγράφονται κβαντομηχανικά.";
+  initialWavelengthValue.textContent = `${initialWavelengthNm.toFixed(4)} nm`;
   scatterAngleValue.textContent = "-";
   wavelengthShiftValue.textContent = "-";
   scatteredWavelengthValue.textContent = "-";
@@ -205,6 +302,9 @@ function drawNeonAtom(metrics, elapsedTime) {
     innerElectronAngles,
     electronRadius,
     innerRotationAngle,
+    {
+      skipIndex: getPhotoelectricInnerSkipIndex(elapsedTime),
+    },
   );
   drawElectrons(
     center,
@@ -218,11 +318,37 @@ function drawNeonAtom(metrics, elapsedTime) {
         comptonState &&
         elapsedTime >= comptonState.startTime + comptonState.incomingDuration
           ? comptonState.targetElectronIndex
-          : null,
+          : photoelectricState &&
+              photoelectricState.donorElectronIndex !== null &&
+              elapsedTime >= photoelectricState.transitionStartTime
+            ? photoelectricState.donorElectronIndex
+            : null,
     },
   );
   drawNucleus(center, centerY, nucleusRadius, nucleonRadius);
   drawComptonScene(metrics, elapsedTime, outerOrbitRadius, electronRadius);
+  drawPhotoelectricScene(metrics, elapsedTime, electronRadius);
+}
+
+function getPhotoelectricInnerSkipIndex(time) {
+  if (!photoelectricState) {
+    return null;
+  }
+
+  const absorptionMoment = photoelectricState.startTime + photoelectricState.incomingDuration;
+
+  if (time < absorptionMoment) {
+    return null;
+  }
+
+  if (
+    photoelectricState.transitionEndTime !== null &&
+    time >= photoelectricState.transitionEndTime
+  ) {
+    return null;
+  }
+
+  return photoelectricState.targetElectronIndex;
 }
 
 function getCanvasMetrics() {
@@ -299,6 +425,53 @@ function getClosestComptonTarget(geometry, metrics, startTime) {
   return bestTarget;
 }
 
+function getPhotoelectricTarget(geometry, metrics, startTime) {
+  const topElectron = innerElectronAngles
+    .map((_, index) => getInnerElectronPosition(geometry, metrics, index, startTime))
+    .sort((a, b) => a.y - b.y)[0];
+  const incomingStartX = -metrics.scale * 0.28;
+  const incomingSpeed = getPhotonVisualSpeed(metrics);
+  const maxIncomingDuration =
+    (geometry.center + geometry.innerOrbitRadius - incomingStartX) / incomingSpeed;
+  const samples = 260;
+  let bestTarget = null;
+
+  for (let sample = 0; sample <= samples; sample += 1) {
+    const timeOffset = (maxIncomingDuration * sample) / samples;
+    const electron = getInnerElectronPosition(geometry, metrics, topElectron.index, startTime + timeOffset);
+    const photonX = incomingStartX + incomingSpeed * timeOffset;
+    const distance = Math.abs(photonX - electron.x);
+
+    if (!bestTarget || distance < bestTarget.distance) {
+      bestTarget = {
+        index: topElectron.index,
+        distance,
+        incomingDuration: timeOffset,
+        electronX: electron.x,
+        electronY: electron.y,
+      };
+    }
+  }
+
+  return bestTarget;
+}
+
+function getInnerElectronPosition(geometry, metrics, index, time) {
+  const rotationAngle = getOrbitalRotationAngle(
+    time,
+    geometry.innerOrbitRadius,
+    metrics,
+    innerElectronBeta,
+  );
+  const radians = degreesToRadians(innerElectronAngles[index] + rotationAngle);
+
+  return {
+    index,
+    x: geometry.center + Math.cos(radians) * geometry.innerOrbitRadius,
+    y: geometry.centerY + Math.sin(radians) * geometry.innerOrbitRadius,
+  };
+}
+
 function getOuterElectronPosition(geometry, metrics, index, time) {
   const rotationAngle = getOrbitalRotationAngle(
     time,
@@ -313,6 +486,19 @@ function getOuterElectronPosition(geometry, metrics, index, time) {
     x: geometry.center + Math.cos(radians) * geometry.outerOrbitRadius,
     y: geometry.centerY + Math.sin(radians) * geometry.outerOrbitRadius,
   };
+}
+
+function getNearestOuterElectronToPoint(geometry, metrics, point, time) {
+  return outerElectronAngles.reduce((nearest, _, index) => {
+    const electron = getOuterElectronPosition(geometry, metrics, index, time);
+    const distance = Math.hypot(point.x - electron.x, point.y - electron.y);
+
+    if (!nearest || distance < nearest.distance) {
+      return { ...electron, distance };
+    }
+
+    return nearest;
+  }, null);
 }
 
 function drawComptonScene(metrics, currentTime, outerOrbitRadius, electronRadius) {
@@ -432,6 +618,257 @@ function drawComptonScene(metrics, currentTime, outerOrbitRadius, electronRadius
   }
 }
 
+function drawPhotoelectricScene(metrics, currentTime, electronRadius) {
+  if (!photoelectricState) {
+    return;
+  }
+
+  const geometry = getAtomGeometry(metrics);
+  const targetElectron = getInnerElectronPosition(
+    geometry,
+    metrics,
+    photoelectricState.targetElectronIndex,
+    photoelectricState.startTime + photoelectricState.incomingDuration,
+  );
+  const interaction = {
+    x: targetElectron.x,
+    y: targetElectron.y,
+  };
+  photoelectricState.interactionPoint = interaction;
+
+  const absorptionMoment = photoelectricState.startTime + photoelectricState.incomingDuration;
+  const incomingProgress = Math.min(
+    1,
+    Math.max(0, (currentTime - photoelectricState.startTime) / photoelectricState.incomingDuration),
+  );
+
+  if (currentTime < absorptionMoment) {
+    const packetX =
+      photoelectricState.incomingStartX +
+      (photoelectricState.incomingEndX - photoelectricState.incomingStartX) * incomingProgress;
+
+    if (geometryToggle.checked) {
+      drawPhotonIncomingPath(photoelectricState.incomingStartX, photoelectricState.incomingY, packetX);
+    }
+
+    drawWavePacket({
+      x: packetX,
+      y: photoelectricState.incomingY,
+      angle: 0,
+      wavelength: visualInitialWavelengthPx,
+      packetLength: metrics.scale * 0.17,
+      amplitude: metrics.scale * 0.0115,
+      color: "rgba(125, 211, 252, 0.95)",
+      alpha: 1,
+    });
+    return;
+  }
+
+  if (!photoelectricState.results) {
+    photoelectricState.phase = "absorbed";
+    photoelectricState.absorptionTime = absorptionMoment;
+    photoelectricState.transitionStartTime = absorptionMoment + photoelectricVacancyDelay;
+    photoelectricState.transitionEndTime =
+      photoelectricState.transitionStartTime + photoelectricTransitionDuration;
+    photoelectricState.results = calculatePhotoelectricResults();
+    const transitionVacancy = getInnerElectronPosition(
+      geometry,
+      metrics,
+      photoelectricState.targetElectronIndex,
+      photoelectricState.transitionStartTime,
+    );
+    const donor = getNearestOuterElectronToPoint(
+      geometry,
+      metrics,
+      transitionVacancy,
+      photoelectricState.transitionStartTime,
+    );
+    photoelectricState.donorElectronIndex = donor.index;
+    photoelectricState.donorStart = { x: donor.x, y: donor.y };
+    updatePhotoelectricPanel(photoelectricState.results);
+  }
+
+  const results = photoelectricState.results;
+  const movingVacancy = getInnerElectronPosition(
+    geometry,
+    metrics,
+    photoelectricState.targetElectronIndex,
+    currentTime,
+  );
+  const photonVisualSpeed = getPhotonVisualSpeed(metrics);
+  const absorptionElapsed = Math.max(0, currentTime - absorptionMoment);
+  const photoelectronDistance = absorptionElapsed * photonVisualSpeed * results.photoelectronBeta;
+  const photoelectronAngleRad = degreesToRadians(results.photoelectronAngleDeg);
+  const photoelectronPosition = {
+    x: interaction.x + Math.cos(photoelectronAngleRad) * photoelectronDistance,
+    y: interaction.y + Math.sin(photoelectronAngleRad) * photoelectronDistance,
+  };
+
+  if (geometryToggle.checked) {
+    drawPhotoelectricGeometry({
+      interaction,
+      photoelectronPosition,
+      incomingStartX: photoelectricState.incomingStartX,
+      incomingY: photoelectricState.incomingY,
+      scale: metrics.scale,
+    });
+  }
+
+  if (currentTime < photoelectricState.transitionEndTime) {
+    drawElectronVacancy(movingVacancy.x, movingVacancy.y, electronRadius);
+  }
+
+  drawEjectedElectron({
+    x: photoelectronPosition.x,
+    y: photoelectronPosition.y,
+    radius: electronRadius * 1.18,
+  });
+
+  const transitionProgress = Math.min(
+    1,
+    Math.max(
+      0,
+      (currentTime - photoelectricState.transitionStartTime) / photoelectricTransitionDuration,
+    ),
+  );
+
+  if (transitionProgress > 0 && photoelectricState.donorStart) {
+    const transitionTarget = getInnerElectronPosition(
+      geometry,
+      metrics,
+      photoelectricState.targetElectronIndex,
+      currentTime,
+    );
+    const donorX =
+      photoelectricState.donorStart.x +
+      (transitionTarget.x - photoelectricState.donorStart.x) * easeInOutCubic(transitionProgress);
+    const donorY =
+      photoelectricState.donorStart.y +
+      (transitionTarget.y - photoelectricState.donorStart.y) * easeInOutCubic(transitionProgress);
+    const transitionElectronPosition = {
+      x: donorX,
+      y: donorY,
+    };
+
+    if (transitionProgress < 1) {
+      drawBoundElectron(transitionElectronPosition.x, transitionElectronPosition.y, electronRadius);
+    }
+
+    const movingOuterVacancy = getOuterElectronPosition(
+      geometry,
+      metrics,
+      photoelectricState.donorElectronIndex,
+      currentTime,
+    );
+    drawElectronVacancy(movingOuterVacancy.x, movingOuterVacancy.y, electronRadius);
+
+    const emittedPhotonStartTime =
+      photoelectricState.transitionStartTime + photoelectricTransitionDuration * 0.5;
+    const emittedPhotonTarget = getInnerElectronPosition(
+      geometry,
+      metrics,
+      photoelectricState.targetElectronIndex,
+      emittedPhotonStartTime,
+    );
+    const emittedPhotonOrigin = {
+      x: (photoelectricState.donorStart.x + emittedPhotonTarget.x) / 2,
+      y: (photoelectricState.donorStart.y + emittedPhotonTarget.y) / 2,
+    };
+    let emittedPhotonPosition = null;
+
+    if (currentTime >= emittedPhotonStartTime) {
+      const emittedElapsed = currentTime - emittedPhotonStartTime;
+      const emittedPhotonAngleRad = degreesToRadians(results.emittedPhotonAngleDeg);
+      const emittedPhotonDistance = emittedElapsed * photonVisualSpeed * 0.85;
+      emittedPhotonPosition = {
+        x: emittedPhotonOrigin.x + Math.cos(emittedPhotonAngleRad) * emittedPhotonDistance,
+        y: emittedPhotonOrigin.y + Math.sin(emittedPhotonAngleRad) * emittedPhotonDistance,
+      };
+
+      if (geometryToggle.checked) {
+        drawGeometryLine(
+          emittedPhotonOrigin,
+          emittedPhotonPosition,
+          "rgba(248, 113, 113, 0.68)",
+          [8, 6],
+        );
+      }
+
+      drawWavePacket({
+        x: emittedPhotonPosition.x,
+        y: emittedPhotonPosition.y,
+        angle: emittedPhotonAngleRad,
+        wavelength: visualEmittedWavelengthPx,
+        packetLength: metrics.scale * 0.24,
+        amplitude: metrics.scale * 0.012,
+        color: "rgba(248, 113, 113, 0.92)",
+        alpha: 0.86,
+      });
+    }
+
+    if (geometryToggle.checked) {
+      drawGeometryPath(
+        getPhotoelectricTransitionPathPoints(photoelectricState, geometry, metrics, currentTime),
+        "rgba(250, 204, 21, 0.64)",
+        [5, 5],
+      );
+    }
+
+    if (
+      isPlaying &&
+      transitionProgress >= 1 &&
+      isPointOutsideCanvas(photoelectronPosition, metrics, electronRadius * 1.18) &&
+      emittedPhotonPosition &&
+      isPointOutsideCanvas(emittedPhotonPosition, metrics, metrics.scale * 0.2)
+    ) {
+      pauseAtom();
+    }
+  }
+}
+
+function drawPhotoelectricGeometry({ interaction, photoelectronPosition, incomingStartX, incomingY, scale }) {
+  drawPhotonIncomingPath(incomingStartX, incomingY, interaction.x);
+  drawReferenceExtension(interaction, scale);
+  drawGeometryLine(interaction, photoelectronPosition, "rgba(250, 204, 21, 0.62)", [5, 6]);
+}
+
+function getPhotoelectricTransitionPathPoints(state, geometry, metrics, currentTime) {
+  const startTime = state.transitionStartTime;
+  const endTime = state.transitionEndTime;
+  const pathEndTime = Math.min(currentTime, endTime);
+  const pathDuration = Math.max(0, pathEndTime - startTime);
+  const samples = Math.max(2, Math.ceil((pathDuration / photoelectricTransitionDuration) * 28));
+  const points = [];
+
+  for (let sample = 0; sample <= samples; sample += 1) {
+    const sampleTime = startTime + (pathDuration * sample) / samples;
+    const progress = Math.min(
+      1,
+      Math.max(0, (sampleTime - startTime) / photoelectricTransitionDuration),
+    );
+    const target = getInnerElectronPosition(
+      geometry,
+      metrics,
+      state.targetElectronIndex,
+      sampleTime,
+    );
+    const easedProgress = easeInOutCubic(progress);
+
+    points.push({
+      x: state.donorStart.x + (target.x - state.donorStart.x) * easedProgress,
+      y: state.donorStart.y + (target.y - state.donorStart.y) * easedProgress,
+    });
+  }
+
+  return points;
+}
+
+function easeInOutCubic(progress) {
+  return progress < 0.5
+    ? 4 * progress * progress * progress
+    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+}
+
 function drawPhotonIncomingPath(startX, y, interactionX) {
   atomContext.save();
   atomContext.strokeStyle = "rgba(125, 211, 252, 0.42)";
@@ -491,6 +928,26 @@ function drawGeometryLine(start, end, color, dashPattern) {
   atomContext.beginPath();
   atomContext.moveTo(start.x, start.y);
   atomContext.lineTo(end.x, end.y);
+  atomContext.stroke();
+  atomContext.restore();
+}
+
+function drawGeometryPath(points, color, dashPattern) {
+  if (points.length < 2) {
+    return;
+  }
+
+  atomContext.save();
+  atomContext.strokeStyle = color;
+  atomContext.lineWidth = 2;
+  atomContext.setLineDash(dashPattern);
+  atomContext.beginPath();
+  atomContext.moveTo(points[0].x, points[0].y);
+
+  for (let index = 1; index < points.length; index += 1) {
+    atomContext.lineTo(points[index].x, points[index].y);
+  }
+
   atomContext.stroke();
   atomContext.restore();
 }
@@ -591,6 +1048,15 @@ function drawEjectedElectron({ x, y, radius }) {
   atomContext.restore();
 }
 
+function drawBoundElectron(x, y, radius) {
+  atomContext.save();
+  atomContext.fillStyle = "#facc15";
+  atomContext.beginPath();
+  atomContext.arc(x, y, radius, 0, Math.PI * 2);
+  atomContext.fill();
+  atomContext.restore();
+}
+
 function calculateComptonScattering() {
   const theta = sampleKleinNishinaAngle(photonInitialEnergyKeV);
   const scatterSign = Math.random() < 0.5 ? -1 : 1;
@@ -626,6 +1092,27 @@ function calculateComptonScattering() {
     energyRatio: scatteredEnergyKeV / photonInitialEnergyKeV,
     electronBeta: beta,
   };
+}
+
+function calculatePhotoelectricResults() {
+  const photoelectronKineticEnergyKeV = photonInitialEnergyKeV - kShellBindingEnergyKeV;
+  const gamma = 1 + photoelectronKineticEnergyKeV / electronRestEnergyKeV;
+  const photoelectronBeta = Math.sqrt(Math.max(0, 1 - 1 / (gamma * gamma)));
+  const emittedPhotonEnergyKeV = kShellBindingEnergyKeV - lShellBindingEnergyKeV;
+  const emittedPhotonWavelengthNm = hcKeVNm / emittedPhotonEnergyKeV;
+
+  return {
+    photoelectronKineticEnergyKeV,
+    photoelectronBeta,
+    photoelectronAngleDeg: randomRange(-60, 60),
+    emittedPhotonAngleDeg: randomRange(0, 360),
+    emittedPhotonEnergyKeV,
+    emittedPhotonWavelengthNm,
+  };
+}
+
+function randomRange(min, max) {
+  return min + Math.random() * (max - min);
 }
 
 function sampleKleinNishinaAngle(energyKeV) {
@@ -676,6 +1163,26 @@ function updateComptonPanel(results) {
   scatteredEnergyValue.textContent = `${results.scatteredEnergyKeV.toFixed(1)} keV`;
   electronEnergyValue.textContent = `${results.electronKineticEnergyKeV.toFixed(2)} keV`;
   electronAngleValue.textContent = `${results.electronAngleDeg.toFixed(0)}°`;
+}
+
+function updatePhotoelectricPanel(results) {
+  panelTitle.textContent = "Φωτοηλεκτρικό φαινόμενο";
+  panelLabels.initialWavelength.textContent = "Στιβάδα απορρόφησης";
+  panelLabels.scatterAngle.textContent = "Ενέργεια σύνδεσης K";
+  panelLabels.wavelengthShift.textContent = "Κινητική ενέργεια φωτοηλεκτρονίου";
+  panelLabels.scatteredWavelength.textContent = "Ταχύτητα φωτοηλεκτρονίου";
+  panelLabels.scatteredEnergy.textContent = "Μετάπτωση";
+  panelLabels.electronEnergy.textContent = "Ενέργεια εκπεμπόμενου φωτονίου";
+  panelLabels.electronAngle.textContent = "Μήκος κύματος εκπεμπόμενου φωτονίου";
+  panelNote.textContent =
+    "Η εικόνα είναι απλοποιημένη αναπαράσταση. Στην πραγματικότητα τα ηλεκτρόνια δεν κινούνται σε κλασικές κυκλικές τροχιές, αλλά περιγράφονται κβαντομηχανικά.";
+  initialWavelengthValue.textContent = "K";
+  scatterAngleValue.textContent = `${kShellBindingEnergyKeV.toFixed(2)} keV`;
+  wavelengthShiftValue.textContent = `${results.photoelectronKineticEnergyKeV.toFixed(2)} keV`;
+  scatteredWavelengthValue.textContent = `${results.photoelectronBeta.toFixed(2)}c`;
+  scatteredEnergyValue.textContent = "L → K";
+  electronEnergyValue.textContent = `${results.emittedPhotonEnergyKeV.toFixed(2)} keV`;
+  electronAngleValue.textContent = `${results.emittedPhotonWavelengthNm.toFixed(2)} nm`;
 }
 
 function drawOrbit(x, y, radius) {
