@@ -33,24 +33,9 @@
           type="range"
           id="atomic-number-slider"
           min="6"
-          max="30"
+          max="50"
           step="1"
           value="26"
-        >
-      </label>
-
-      <label class="slider-control">
-        <span class="slider-label">
-          <span>Αριθμός φωτονίων N</span>
-          <output for="photon-count-slider" id="photon-count-value">100</output>
-        </span>
-        <input
-          type="range"
-          id="photon-count-slider"
-          min="100"
-          max="1000"
-          step="100"
-          value="100"
         >
       </label>
 
@@ -115,6 +100,24 @@
           </div>
           <div class="probability-meter" aria-hidden="true">
             <span id="total-interaction-meter"></span>
+          </div>
+
+          <h3>Από τα φωτόνια που εκπέμπονται:</h3>
+
+          <div class="probability-row is-subrow">
+            <span>Compton</span>
+            <output id="absolute-compton-probability">0%</output>
+          </div>
+          <div class="probability-meter is-subrow" aria-hidden="true">
+            <span id="absolute-compton-meter"></span>
+          </div>
+
+          <div class="probability-row is-subrow">
+            <span>Φωτοηλεκτρικό</span>
+            <output id="absolute-photoelectric-probability">0%</output>
+          </div>
+          <div class="probability-meter is-subrow" aria-hidden="true">
+            <span id="absolute-photoelectric-meter"></span>
           </div>
         </div>
 

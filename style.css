@@ -475,6 +475,16 @@ h1 {
   font-weight: 700;
 }
 
+.probability-row.is-subrow,
+.probability-meter.is-subrow {
+  margin-left: 0.8rem;
+}
+
+.probability-row.is-subrow {
+  color: rgba(238, 243, 255, 0.86);
+  font-size: 0.8rem;
+}
+
 .probability-row output,
 .probability-row output {
   color: #7dd3c7;

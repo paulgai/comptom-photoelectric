@@ -1,7 +1,6 @@
 const crystalGrid = document.querySelector("#crystal-grid");
 const atomicNumberSlider = document.querySelector("#atomic-number-slider");
 const photonEnergySlider = document.querySelector("#photon-energy-slider");
-const photonCountSlider = document.querySelector("#photon-count-slider");
 const photonTrailToggles = {
   pass: document.querySelector("#pass-photon-trails-toggle"),
   scattered: document.querySelector("#scattered-photon-trails-toggle"),
@@ -19,24 +18,27 @@ const secondAppView = document.querySelector("#second-app-view");
 const probabilityOutputs = {
   totalPass: document.querySelector("#total-pass-probability"),
   totalInteraction: document.querySelector("#total-interaction-probability"),
+  absoluteCompton: document.querySelector("#absolute-compton-probability"),
+  absolutePhotoelectric: document.querySelector("#absolute-photoelectric-probability"),
   comptonShare: document.querySelector("#compton-share-probability"),
   photoelectricShare: document.querySelector("#photoelectric-share-probability"),
 };
 const probabilityMeters = {
   totalPass: document.querySelector("#total-pass-meter"),
   totalInteraction: document.querySelector("#total-interaction-meter"),
+  absoluteCompton: document.querySelector("#absolute-compton-meter"),
+  absolutePhotoelectric: document.querySelector("#absolute-photoelectric-meter"),
   comptonShare: document.querySelector("#compton-share-meter"),
   photoelectricShare: document.querySelector("#photoelectric-share-meter"),
 };
 const gridRows = 5;
 const svgNamespace = "http://www.w3.org/2000/svg";
-const fixedLayerCount = 5;
+const atomColumnCount = 5;
+const fixedPhotonCount = 100;
 const photonSpeedPixelsPerSecond = 450;
 const photonEmissionDelaySeconds = 0.009;
-const photonInteractionMaxProbability = 0.8;
-const comptonWeightScale = 0.004;
-const photoelectricWeightScale = 0.02;
-const comptonReferenceEnergyKeV = 700;
+const photoelectricCrossSectionScale = 64;
+const interactionProbabilityScale = Math.LN2 / 40;
 const electronRestEnergyKeV = 511;
 const photoelectricZPower = 4;
 const app2FrameStepSeconds = 5 / 60;
@@ -66,15 +68,10 @@ const sliderOutputs = [
     afterUpdate: () => updateGridAtoms(),
   },
   {
-    slider: photonCountSlider,
-    output: document.querySelector("#photon-count-value"),
-    format: (value) => Number(value).toFixed(0),
-  },
-  {
     slider: distanceSlider,
     output: document.querySelector("#distance-value"),
     format: (value) => Number(value).toFixed(0),
-    afterUpdate: () => renderCrystalGrid(fixedLayerCount),
+    afterUpdate: () => renderCrystalGrid(atomColumnCount),
   },
 ];
 
@@ -92,7 +89,6 @@ function renderCrystalGrid(columnCount) {
     for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
       const cell = document.createElement("span");
       cell.className = "crystal-cell";
-      cell.dataset.layerOffset = offset;
       cell.dataset.row = rowIndex;
       cell.append(createCellCounters());
       cell.append(createAtomGlyph(getCurrentAtomicNumber()));
@@ -300,20 +296,20 @@ function restartApp2Controls() {
 function startApp2Radiation() {
   resetRadiation();
 
-  const layerCells = getGridCellsByLayer();
+  const atomCells = getGridAtomCells();
 
-  if (layerCells.length === 0) {
+  if (atomCells.length === 0) {
     return;
   }
 
   const probabilities = calculateInteractionProbabilities();
   const photonFragment = document.createDocumentFragment();
-  const atomStates = createAtomInteractionStates(layerCells);
+  const atomStates = createAtomInteractionStates(atomCells);
   const photonPlans = Array.from({ length: getCurrentPhotonCount() }, (_, index) => {
     return {
       photonNumber: index + 1,
       delay: index * photonEmissionDelaySeconds,
-      result: getPhotonInteractionResult(layerCells, probabilities),
+      result: getPhotonInteractionResult(atomCells, probabilities),
     };
   });
   const photonRecords = new Map();
@@ -323,7 +319,7 @@ function startApp2Radiation() {
     .forEach((plan) => {
       photonRecords.set(
         plan.photonNumber,
-        createPhotonRecord(plan, layerCells, photonFragment, atomStates),
+        createPhotonRecord(plan, photonFragment, atomStates),
       );
     });
 
@@ -360,26 +356,35 @@ function resetCellCounters() {
 function calculateInteractionProbabilities() {
   const energyKeV = Number(photonEnergySlider.value);
   const atomicNumber = Number(atomicNumberSlider.value);
-  const comptonWeight =
-    comptonWeightScale * atomicNumber * (1 / (1 + energyKeV / comptonReferenceEnergyKeV));
-  const photoelectricWeight =
-    photoelectricWeightScale * (atomicNumber ** photoelectricZPower) / (energyKeV ** 3);
-  const totalWeight = comptonWeight + photoelectricWeight;
-  const comptonProbability = totalWeight > 0 ? comptonWeight / totalWeight : 0.5;
-  const photoelectricProbability = totalWeight > 0 ? photoelectricWeight / totalWeight : 0.5;
+  const comptonCrossSection = atomicNumber;
+  const photoelectricCrossSection =
+    photoelectricCrossSectionScale * (atomicNumber ** photoelectricZPower) / (energyKeV ** 3);
+  const totalCrossSection = comptonCrossSection + photoelectricCrossSection;
+  const interactionProbability = 1 - Math.exp(-interactionProbabilityScale * totalCrossSection);
+  const comptonProbability = totalCrossSection > 0
+    ? comptonCrossSection / totalCrossSection
+    : 0;
+  const photoelectricProbability = totalCrossSection > 0
+    ? photoelectricCrossSection / totalCrossSection
+    : 0;
+  const comptonEventProbability = interactionProbability * comptonProbability;
+  const photoelectricEventProbability = interactionProbability * photoelectricProbability;
 
   return {
-    comptonWeight,
-    photoelectricWeight,
-    totalWeight,
+    comptonCrossSection,
+    photoelectricCrossSection,
+    totalCrossSection,
+    comptonEventProbability,
+    photoelectricEventProbability,
     comptonProbability,
     photoelectricProbability,
-    interactionProbability: photonInteractionMaxProbability * (1 - Math.exp(-totalWeight)),
+    interactionProbability,
+    passProbability: 1 - interactionProbability,
   };
 }
 
 function getCurrentPhotonCount() {
-  return Number(photonCountSlider.value);
+  return fixedPhotonCount;
 }
 
 function isPassPhotonTrailEnabled() {
@@ -421,10 +426,11 @@ function setProbabilityValue(key, value, displayValue = value) {
   probabilityMeters[key].style.setProperty("--probability-value", `${clampedValue * 100}%`);
 }
 
-function getDisplayProbabilityValues(values) {
+function getDisplayProbabilityValues(values, targetValue = 1) {
   const clampedValues = values.map((value) => Math.max(0, Math.min(1, value)));
   const roundedTenths = clampedValues.map((value) => Math.round(value * 1000));
-  const difference = 1000 - roundedTenths.reduce((sum, value) => sum + value, 0);
+  const targetTenths = Math.round(Math.max(0, Math.min(1, targetValue)) * 1000);
+  const difference = targetTenths - roundedTenths.reduce((sum, value) => sum + value, 0);
   roundedTenths[roundedTenths.length - 1] += difference;
 
   return roundedTenths.map((value) => value / 1000);
@@ -432,25 +438,39 @@ function getDisplayProbabilityValues(values) {
 
 function updateProbabilityPanel() {
   const probabilities = calculateInteractionProbabilities();
-  const layerPassProbability = 1 - probabilities.interactionProbability;
-  const totalPassProbability = layerPassProbability ** fixedLayerCount;
-  const totalInteractionProbability = 1 - totalPassProbability;
+  const totalInteractionProbability = probabilities.interactionProbability;
+  const totalPassProbability = probabilities.passProbability;
+  const totalComptonProbability = probabilities.comptonEventProbability;
+  const totalPhotoelectricProbability = probabilities.photoelectricEventProbability;
   const passInteractionDisplayValues = getDisplayProbabilityValues([
     totalPassProbability,
     totalInteractionProbability,
   ]);
+  const absoluteInteractionDisplayValues = getDisplayProbabilityValues(
+    [
+      totalComptonProbability,
+      totalPhotoelectricProbability,
+    ],
+    passInteractionDisplayValues[1],
+  );
   const interactionTypeDisplayValues = getDisplayProbabilityValues([
     probabilities.comptonProbability,
     probabilities.photoelectricProbability,
-  ]);
+  ], totalInteractionProbability > 0 ? 1 : 0);
 
   setProbabilityValue("totalPass", totalPassProbability, passInteractionDisplayValues[0]);
   setProbabilityValue("totalInteraction", totalInteractionProbability, passInteractionDisplayValues[1]);
+  setProbabilityValue("absoluteCompton", totalComptonProbability, absoluteInteractionDisplayValues[0]);
+  setProbabilityValue(
+    "absolutePhotoelectric",
+    totalPhotoelectricProbability,
+    absoluteInteractionDisplayValues[1],
+  );
   setProbabilityValue("comptonShare", probabilities.comptonProbability, interactionTypeDisplayValues[0]);
   setProbabilityValue("photoelectricShare", probabilities.photoelectricProbability, interactionTypeDisplayValues[1]);
 }
 
-function getGridCellsByLayer() {
+function getGridAtomCells() {
   return [...crystalGrid.querySelectorAll(".crystal-column")]
     .map((column) => {
       const columnRect = column.getBoundingClientRect();
@@ -461,19 +481,14 @@ function getGridCellsByLayer() {
       };
     })
     .sort((a, b) => a.x - b.x)
-    .map((layer, index) => ({
-      ...layer,
-      layerNumber: index + 1,
-    }));
+    .flatMap((column) => column.cells);
 }
 
-function createAtomInteractionStates(layerCells) {
+function createAtomInteractionStates(atomCells) {
   const atomStates = new Map();
 
-  layerCells.forEach((layer) => {
-    layer.cells.forEach((cell) => {
-      atomStates.set(cell, createAtomInteractionState(cell));
-    });
+  atomCells.forEach((cell) => {
+    atomStates.set(cell, createAtomInteractionState(cell));
   });
 
   return atomStates;
@@ -492,8 +507,6 @@ function createAtomInteractionState(cell) {
       currentElectronIndex: electronIndex,
       currentCx: element.dataset.originalCx,
       currentCy: element.dataset.originalCy,
-      removed: false,
-      movedToK: false,
     };
   });
 
@@ -513,10 +526,10 @@ function estimatePhotonInteractionTime(plan) {
   return plan.delay + Math.max(0, cellRect.left + cellRect.width / 2 + 80) / photonSpeedPixelsPerSecond;
 }
 
-function createPhotonRecord(plan, layerCells, photonFragment, atomStates) {
+function createPhotonRecord(plan, photonFragment, atomStates) {
   const { photonNumber, delay, result } = plan;
   const startX = -80;
-  const target = getPhotonTarget(result, layerCells, delay, startX, atomStates);
+  const target = getPhotonTarget(result, delay, startX, atomStates);
   const photonElement = document.createElement("span");
   const incomingTrailElement = document.createElement("span");
   const scatterTrailElement = document.createElement("span");
@@ -587,7 +600,6 @@ function createPhotonRecord(plan, layerCells, photonFragment, atomStates) {
   return {
     photonNumber,
     interacted: result.interacted,
-    layer: result.layerNumber,
     cell: result.cell,
     counterElement: result.cell?.querySelector(".cell-counters") ?? null,
     type: result.type,
@@ -640,37 +652,37 @@ function createPhotonRecord(plan, layerCells, photonFragment, atomStates) {
   };
 }
 
-function getPhotonInteractionResult(layerCells, probabilities) {
-  const layerPassProbability = 1 - probabilities.interactionProbability;
-  const totalInteractionProbability = 1 - (layerPassProbability ** fixedLayerCount);
+function getPhotonInteractionResult(atomCells, probabilities) {
+  const randomValue = Math.random();
 
-  if (Math.random() >= totalInteractionProbability) {
+  if (randomValue < probabilities.comptonEventProbability) {
+    const cell = atomCells[Math.floor(Math.random() * atomCells.length)];
+
     return {
-      interacted: false,
-      layerNumber: null,
-      cell: null,
-      type: "pass",
+      interacted: true,
+      cell,
+      type: "compton",
     };
   }
 
-  const cells = layerCells.flatMap((layer) => {
-    return layer.cells.map((cell) => ({
+  if (randomValue < probabilities.comptonEventProbability + probabilities.photoelectricEventProbability) {
+    const cell = atomCells[Math.floor(Math.random() * atomCells.length)];
+
+    return {
+      interacted: true,
       cell,
-      layerNumber: layer.layerNumber,
-    }));
-  });
-  const target = cells[Math.floor(Math.random() * cells.length)];
-  const type = Math.random() < probabilities.comptonProbability ? "compton" : "photoelectric";
+      type: "photoelectric",
+    };
+  }
 
   return {
-    interacted: true,
-    layerNumber: target.layerNumber,
-    cell: target.cell,
-    type,
+    interacted: false,
+    cell: null,
+    type: "pass",
   };
 }
 
-function getPhotonTarget(result, layerCells, delay, startX, atomStates) {
+function getPhotonTarget(result, delay, startX, atomStates) {
   if (!result.interacted) {
     const gridRect = crystalGrid.getBoundingClientRect();
 
@@ -721,22 +733,12 @@ function getKShellPhotoelectricTarget(atomState, cellRect, delay, startX) {
   const vacancyCx = kElectron.currentCx;
   const vacancyCy = kElectron.currentCy;
 
-  kElectron.removed = true;
-
-  if (donorElectron) {
-    donorElectron.movedToK = true;
-    donorElectron.currentShellIndex = 0;
-    donorElectron.currentElectronIndex = kElectron.currentElectronIndex;
-    donorElectron.currentCx = vacancyCx;
-    donorElectron.currentCy = vacancyCy;
-  }
-
   return {
     ...target,
     boundElectronElement: kElectron.element,
     refillElectronElement: donorElectron?.element ?? null,
     refillShellIndex: donorElectron ? 0 : null,
-    refillElectronIndex: donorElectron?.currentElectronIndex ?? null,
+    refillElectronIndex: donorElectron ? kElectron.currentElectronIndex : null,
     refillCx: vacancyCx,
     refillCy: vacancyCy,
   };
@@ -751,8 +753,6 @@ function getOuterElectronCollisionTarget(atomState, cellRect, delay, startX) {
 
   const target = getElectronCollisionTarget(cellRect, electron, delay, startX);
 
-  electron.removed = true;
-
   return {
     ...target,
     boundElectronElement: electron.element,
@@ -761,13 +761,13 @@ function getOuterElectronCollisionTarget(atomState, cellRect, delay, startX) {
 
 function chooseAvailableKElectron(atomState) {
   return atomState.electrons.find((electron) => {
-    return !electron.removed && electron.currentShellIndex === 0;
+    return electron.currentShellIndex === 0;
   }) ?? null;
 }
 
 function chooseAvailableOuterElectron(atomState) {
   const outerElectrons = atomState.electrons.filter((electron) => {
-    return !electron.removed && !electron.movedToK && electron.currentShellIndex > 0;
+    return electron.currentShellIndex > 0;
   });
 
   if (outerElectrons.length === 0) {
