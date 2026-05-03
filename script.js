@@ -43,6 +43,8 @@ const visualEmittedWavelengthPx = 38;
 const photonCenterTravelDuration = 1.55;
 const photoelectricVacancyDelay = 1;
 const photoelectricTransitionDuration = 0.55;
+const stepHoldDelayMs = 400;
+const stepRepeatIntervalMs = frameStepSeconds * 1000;
 const innerElectronBeta = 0.18;
 const outerElectronBeta = 0.1;
 let elapsedTime = 0;
@@ -50,6 +52,8 @@ let lastAnimationTimestamp = null;
 let isPlaying = true;
 let comptonState = null;
 let photoelectricState = null;
+let stepHoldTimeout = null;
+let stepRepeatInterval = null;
 const nucleons = [
   ["proton", -0.34, -0.38, -0.58],
   ["neutron", 0.02, -0.42, -0.55],
@@ -74,15 +78,16 @@ const nucleons = [
 ];
 
 window.addEventListener("resize", resizeAtomCanvas);
-playButton.addEventListener("click", playAtom);
-pauseButton.addEventListener("click", pauseAtom);
-stepBackwardButton.addEventListener("click", () => stepAtom(-frameStepSeconds));
-stepForwardButton.addEventListener("click", () => stepAtom(frameStepSeconds));
+playButton.addEventListener("click", () => setAtomPlaying(true));
+pauseButton.addEventListener("click", () => setAtomPlaying(false));
+bindStepHold(stepBackwardButton, -frameStepSeconds);
+bindStepHold(stepForwardButton, frameStepSeconds);
 restartButton.addEventListener("click", restartSimulation);
 radiationButton.addEventListener("click", startIrradiation);
 geometryToggle.addEventListener("change", drawCurrentAtomFrame);
 phenomenonRadios.forEach((radio) => radio.addEventListener("change", handlePhenomenonChange));
 initialWavelengthValue.textContent = `${initialWavelengthNm.toFixed(4)} nm`;
+window.addEventListener("blur", stopStepHold);
 
 function resizeAtomCanvas() {
   const metrics = getCanvasMetrics();
@@ -117,20 +122,64 @@ function animateAtom(timestamp) {
   requestAnimationFrame(animateAtom);
 }
 
+function setAtomPlaying(nextIsPlaying) {
+  isPlaying = nextIsPlaying;
+  playButton.disabled = isPlaying;
+  pauseButton.disabled = !isPlaying;
+  playButton.classList.toggle("is-active", isPlaying);
+
+  if (isPlaying) {
+    lastAnimationTimestamp = null;
+  }
+}
+
 function playAtom() {
-  isPlaying = true;
+  setAtomPlaying(true);
   lastAnimationTimestamp = null;
 }
 
 function pauseAtom() {
-  isPlaying = false;
+  setAtomPlaying(false);
 }
 
 function stepAtom(seconds) {
-  isPlaying = false;
+  setAtomPlaying(false);
   elapsedTime = Math.max(0, elapsedTime + seconds);
   lastAnimationTimestamp = null;
   drawCurrentAtomFrame();
+}
+
+function stopStepHold() {
+  if (stepHoldTimeout !== null) {
+    clearTimeout(stepHoldTimeout);
+    stepHoldTimeout = null;
+  }
+
+  if (stepRepeatInterval !== null) {
+    clearInterval(stepRepeatInterval);
+    stepRepeatInterval = null;
+  }
+}
+
+function bindStepHold(button, seconds) {
+  button.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    button.setPointerCapture?.(event.pointerId);
+    stopStepHold();
+    stepAtom(seconds);
+
+    stepHoldTimeout = setTimeout(() => {
+      stepAtom(seconds);
+      stepRepeatInterval = setInterval(() => {
+        stepAtom(seconds);
+      }, stepRepeatIntervalMs);
+    }, stepHoldDelayMs);
+  });
+
+  button.addEventListener("pointerup", stopStepHold);
+  button.addEventListener("pointercancel", stopStepHold);
+  button.addEventListener("lostpointercapture", stopStepHold);
+  button.addEventListener("mouseleave", stopStepHold);
 }
 
 function getSelectedPhenomenon() {
@@ -174,8 +223,7 @@ function startComptonIrradiation() {
   radiationButton.disabled = true;
   photoelectricState = null;
   resetComptonPanel();
-  isPlaying = true;
-  lastAnimationTimestamp = null;
+  setAtomPlaying(true);
 }
 
 function startPhotoelectricIrradiation() {
@@ -210,14 +258,13 @@ function startPhotoelectricIrradiation() {
   radiationButton.disabled = true;
   comptonState = null;
   updatePhotoelectricPanel(calculatePhotoelectricResults());
-  isPlaying = true;
-  lastAnimationTimestamp = null;
+  setAtomPlaying(true);
 }
 
 function restartSimulation() {
   elapsedTime = 0;
   lastAnimationTimestamp = null;
-  isPlaying = true;
+  setAtomPlaying(true);
   comptonState = null;
   photoelectricState = null;
   radiationButton.disabled = false;
@@ -1263,4 +1310,5 @@ function radiansToDegrees(radians) {
 }
 
 resizeAtomCanvas();
+setAtomPlaying(true);
 requestAnimationFrame(animateAtom);
